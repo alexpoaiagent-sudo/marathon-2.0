@@ -1,0 +1,49 @@
+name: Daily Health Check
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Run health check
+      run: |
+        chmod +x scripts/check-integrity.sh
+        bash scripts/check-integrity.sh
+      continue-on-error: true
+    
+    - name: Upload report
+      uses: actions/upload-artifact@v3
+      with:
+        name: health-report-${{ github.run_number }}
+        path: reports/health-check-*.md
+        retention-days: 30
+    
+    - name: Create Issue if problems found
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const reportFiles = fs.readdirSync('reports').filter(f => f.startsWith('health-check-'));
+          const latestReport = reportFiles.sort().reverse()[0];
+          const reportContent = fs.readFileSync(`reports/${latestReport}`, 'utf8');
+          
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `⚠️ Проблемы в репозитории Marathon 2.0 - ${new Date().toISOString().split('T')[0]}`,
+            body: reportContent,
+            labels: ['health-check', 'автоматика']
+          });
