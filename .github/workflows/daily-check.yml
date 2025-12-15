@@ -1,49 +1,177 @@
-name: Daily Health Check
+name: Daily Health Check + Summary
 
 on:
   schedule:
-    - cron: '0 9 * * *'
+    # 09:00 Helsinki зимой ≈ 07:00 UTC
+    - cron: '0 7 * * *'
   workflow_dispatch:
   push:
     branches: [ main ]
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   health-check:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
-    
-    - name: Run health check
-      run: |
-        chmod +x scripts/check-integrity.sh
-        bash scripts/check-integrity.sh
-      continue-on-error: true
-    
-    - name: Upload report
-      uses: actions/upload-artifact@v3
-      with:
-        name: health-report-${{ github.run_number }}
-        path: reports/health-check-*.md
-        retention-days: 30
-    
-    - name: Create Issue if problems found
-      if: failure()
-      uses: actions/github-script@v6
-      with:
-        script: |
-          const fs = require('fs');
-          const reportFiles = fs.readdirSync('reports').filter(f => f.startsWith('health-check-'));
-          const latestReport = reportFiles.sort().reverse()[0];
-          const reportContent = fs.readFileSync(`reports/${latestReport}`, 'utf8');
-          
-          await github.rest.issues.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            title: `⚠️ Проблемы в репозитории Marathon 2.0 - ${new Date().toISOString().split('T')[0]}`,
-            body: reportContent,
-            labels: ['health-check', 'автоматика']
-          });
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run health check
+        id: hc
+        shell: bash
+        run: |
+          set +e
+          chmod +x scripts/check-integrity.sh
+          bash scripts/check-integrity.sh
+          exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-report-${{ github.run_number }}
+          path: reports/health-check-*.md
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Create Issue if problems found
+        if: ${{ steps.hc.outputs.exit_code != '0' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const dir = 'reports';
+            const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.startsWith('health-check-')) : [];
+            const latest = files.sort().reverse()[0];
+            const body = latest ? fs.readFileSync(`${dir}/${latest}`, 'utf8') : 'Health-check завершился с ошибкой, но отчёт не найден.';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `⚠️ Проблемы (health-check) — ${new Date().toISOString().split('T')[0]}`,
+              body,
+              labels: ['health-check', 'автоматика']
+            });
+
+  daily-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect last 24h changes
+        shell: bash
+        run: |
+          mkdir -p .tmp
+          git log --since="24 hours ago" --pretty=format:"- %h %ad %an %s" --date=short > .tmp/commits.txt || true
+          git diff --since="24 hours ago" > .tmp/diff.patch || true
+          echo "COMMITS<<EOF" >> $GITHUB_ENV
+          sed -e 's/\r$//' .tmp/commits.txt >> $GITHUB_ENV || true
+          echo "EOF" >> $GITHUB_ENV
+          echo "DIFF_BYTES=$(wc -c < .tmp/diff.patch | tr -d ' ')" >> $GITHUB_ENV
+
+      - name: Generate summary via LLM
+        id: llm
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        shell: bash
+        run: |
+          python3 - << 'PY'
+          import os, json, pathlib, textwrap, datetime, urllib.request
+
+          # --- НАСТРОЙКА ПРОВАЙДЕРА ---
+          # Здесь пример под OpenAI Responses API.
+          # Если у тебя Claude — скажи, и я дам готовый блок под Anthropic.
+          api_key = os.environ["LLM_API_KEY"]
+
+          commits = pathlib.Path(".tmp/commits.txt").read_text(encoding="utf-8", errors="ignore")
+          diff = pathlib.Path(".tmp/diff.patch").read_text(encoding="utf-8", errors="ignore")
+
+          # Ограничим diff, чтобы не улететь в лимиты
+          max_chars = 120_000
+          if len(diff) > max_chars:
+            diff = diff[:max_chars] + "\n\n[diff truncated]\n"
+
+          today = datetime.date.today().isoformat()
+
+          prompt = f"""
+          Ты — ассистент проекта marathon-v2. Сформируй ежедневную сводку по изменениям в репозитории за последние 24 часа.
+
+          Требования к сводке:
+          1) Короткий итог (3–6 пунктов)
+          2) Что изменилось (по документам/папкам)
+          3) Риски/поломки (если видно по diff)
+          4) To-do на завтра (3–7 пунктов)
+          5) Если коммитов нет — скажи, что изменений не было.
+
+          Коммиты:
+          {commits or "нет"}
+
+          Diff:
+          {diff or "нет"}
+          """
+
+          # OpenAI Responses API (пример)
+          url = "https://api.openai.com/v1/responses"
+          headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+          }
+          payload = {
+            "model": "gpt-4.1-mini",
+            "input": prompt,
+          }
+
+          req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+          with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+          # Достаём текст (упрощённо)
+          text = ""
+          for item in data.get("output", []):
+            for c in item.get("content", []):
+              if c.get("type") == "output_text":
+                text += c.get("text", "")
+          text = text.strip() or "(LLM вернул пустой ответ)"
+
+          out = f"# Ежедневная сводка — {today}\n\n{text}\n"
+          pathlib.Path(".tmp/summary.md").write_text(out, encoding="utf-8")
+          print("Wrote .tmp/summary.md")
+          PY
+
+      - name: Create Issue (daily summary)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('.tmp/summary.md', 'utf8');
+            const today = new Date().toISOString().split('T')[0];
+
+            // Чтобы не спамить, можно проверять, не создана ли уже сводка за сегодня:
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'daily-summary',
+              per_page: 50
+            });
+            const exists = issues.some(i => i.title.includes(today));
+            if (!exists) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🗓️ Ежедневная сводка — ${today}`,
+                body,
+                labels: ['daily-summary', 'автоматика']
+              });
+            } else {
+              core.info(`Issue for ${today} already exists, skipping.`);
+            }
