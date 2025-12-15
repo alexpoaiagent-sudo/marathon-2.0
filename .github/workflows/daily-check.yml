@@ -73,9 +73,6 @@ jobs:
           mkdir -p .tmp
           git log --since="24 hours ago" --pretty=format:"- %h %ad %an %s" --date=short > .tmp/commits.txt || true
           git diff --since="24 hours ago" > .tmp/diff.patch || true
-          echo "COMMITS<<EOF" >> $GITHUB_ENV
-          sed -e 's/\r$//' .tmp/commits.txt >> $GITHUB_ENV || true
-          echo "EOF" >> $GITHUB_ENV
           echo "DIFF_BYTES=$(wc -c < .tmp/diff.patch | tr -d ' ')" >> $GITHUB_ENV
 
       - name: Generate summary via LLM
