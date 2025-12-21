@@ -93,20 +93,20 @@ check "CONTRIBUTING.md существует" "test -f CONTRIBUTING.md" "Отсу
 
 # Проверка папок
 # Проверка папок
-check "Папка материалы/ существует" "test -d материалы" "Отсутствует папка с материалами"
-check "Папка материалы/участникам/ существует" "test -d материалы/участникам" "Отсутствует блок для участников"
-check "Папка материалы/участникам/встречи/ существует" "test -d материалы/участникам/встречи" "Отсутствуют файлы встреч"
-check "Папка материалы/участникам/шаблоны/ существует" "test -d материалы/участникам/шаблоны" "Отсутствует папка с шаблонами"
-check "Папка материалы/участникам/примеры/ существует" "test -d материалы/участникам/примеры" "Отсутствует папка с примерами"
+check "Папка metamaterial/ существует" "test -d metamaterial" "Отсутствует папка с материалами"
+check "Папка metamaterial/участникам/ существует" "test -d metamaterial/участникам" "Отсутствует блок для участников"
+check "Папка metamaterial/участникам/встречи/ существует" "test -d metamaterial/участникам/встречи" "Отсутствуют файлы встреч"
+check "Папка metamaterial/участникам/шаблоны/ существует" "test -d metamaterial/участникам/шаблоны" "Отсутствует папка с шаблонами"
+check "Папка metamaterial/участникам/примеры/ существует" "test -d metamaterial/участникам/примеры" "Отсутствует папка с примерами"
 
 # Проверка ключевых документов
-check "опросник.md существует" "test -f материалы/участникам/опросник.md" "Отсутствует опросник"
-check "понятия.md существует" "test -f материалы/участникам/понятия.md" "Отсутствует файл понятий"
-check "минимальные-практики.md существует" "test -f материалы/участникам/минимальные-практики.md" "Отсутствует описание практик"
+check "опросник.md существует" "test -f metamaterial/участникам/опросник.md" "Отсутствует опросник"
+check "понятия.md существует" "test -f metamaterial/участникам/понятия.md" "Отсутствует файл понятий"
+check "минимальные-практики.md существует" "test -f metamaterial/участникам/минимальные-практики.md" "Отсутствует описание практик"
 
 # Проверка всех встреч
 for i in {1..4}; do
-    meeting_file="материалы/участникам/встречи/встреча-0${i}.md"
+    meeting_file="metamaterial/участникам/встречи/встреча-0${i}.md"
     check "Встреча $i существует" "test -f $meeting_file" "Отсутствует описание встречи $i"
 done
 
@@ -168,7 +168,7 @@ check_states() {
     local found_all=true
     
     for state in "${states[@]}"; do
-        if ! grep -r "$state" материалы/участникам/ &> /dev/null; then
+        if ! grep -r "$state" metamaterial/участникам/ &> /dev/null; then
             warn "Состояние не упоминается" "Состояние '$state' не найдено в документации"
             found_all=false
         fi
@@ -187,13 +187,13 @@ check_practices() {
     local found=0
     
     for practice in "${practices[@]}"; do
-        if grep -qi "$practice" материалы/участникам/минимальные-практики.md &> /dev/null; then
+        if grep -qi "$practice" metamaterial/участникам/минимальные-практики.md &> /dev/null; then
             found=$((found + 1))
         fi
     done
     
     if [ $found -eq 6 ]; then
-        info "Все 6 практик описаны в материалы/участникам/минимальные-практики.md"
+        info "Все 6 практик описаны в metamaterial/участникам/минимальные-практики.md"
     else
         warn "Неполное описание практик" "Найдено только $found из 6 практик"
     fi
@@ -207,8 +207,8 @@ echo ""
 
 # Подсчёт файлов
 total_files=$(find . -name "*.md" -type f | wc -l)
-doc_files=$(find материалы/ -name "*.md" -type f 2>/dev/null | wc -l || echo 0)
-example_files=$(find материалы/участникам/примеры/ -name "*.md" -type f 2>/dev/null | wc -l || echo 0)
+doc_files=$(find metamaterial/ -name "*.md" -type f 2>/dev/null | wc -l || echo 0)
+example_files=$(find metamaterial/участникам/примеры/ -name "*.md" -type f 2>/dev/null | wc -l || echo 0)
 
 info "Всего Markdown файлов: $total_files"
 info "Файлов документации: $doc_files"
