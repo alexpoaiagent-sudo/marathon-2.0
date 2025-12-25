@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "quint-code": {
+      "command": "/usr/local/bin/quint-code",
+      "args": [
+        "serve"
+      ],
+      "cwd": "/home/user/marathon-v2",
+      "env": {
+        "QUINT_PROJECT_ROOT": "/home/user/marathon-v2"
+      }
+    }
+  }
+}
