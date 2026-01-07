@@ -32,6 +32,6 @@ drafts/
 *.bak
 *.backup
 ~$*
+
 # Quint Code dynamic data (recommended by quint-code repo)
 .quint/
-
