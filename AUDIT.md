@@ -69,7 +69,7 @@
 - `materials/participants/01-02_self-study.md`
 - `materials/participants/02-03_self-study.md`
 - `materials/participants/03-04_self-study.md`
-- `materials/participants/workbook_combined.md`
+- `materials/participants/participant-booklet.md`
 - Все файлы в `promotion/messaging/`
 
 **Рекомендация:** Добавить metadata ко всем файлам
